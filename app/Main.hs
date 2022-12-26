@@ -27,6 +27,8 @@ import Data.Aeson.Text
 import Data.Aeson (ToJSON(..), FromJSON(..), Value(..), (.:), (.=), (.:?), object, fromJSON)
 import Data.Aeson.Types (prependFailure, typeMismatch)
 import Data.Text (Text)
+import Data.Text.Read
+import Data.Either
 
 import System.IO
 import System.Random
@@ -167,7 +169,8 @@ codeforcesBot = BotApp
   where
     updateToAction :: ModelB -> Update -> Maybe Action
     updateToAction _ = parseUpdate $
-          Start    <$  command "start"
+          Find     <$> plainText
+      <|> Start    <$  command "start"
       <|> Find     <$> command "find"
       <|> callbackQueryDataRead
 
@@ -177,22 +180,32 @@ codeforcesBot = BotApp
         reply (toReplyMessage startMessage)
           { replyMessageReplyMarkup = Just (SomeReplyKeyboardMarkup startKeyboard) }
       Find argv -> modelB <# do
-
+        let sp = (Text.split (==' ') argv)
+        let mn = (decimal (sp!!1))
+        let mx = (decimal (sp!!2))
         request' <- liftIO $ parseRequest "POST https://codeforces.com"
         let request
                 = setRequestMethod "POST"
                 $ setRequestPath "/api/problemset.problems"
-                $ setRequestQueryString [("tags", Just(TSE.encodeUtf8 (argv)))]
+                $ setRequestQueryString [("tags", Just(TSE.encodeUtf8 (sp!!0)))]
                 $ request'
         response <- httpJSON request
 
-        let Model {..} = getResponseBody response
-        let Result {..} = modelResult
-        let probs = filter (filter' (Just 1000) (Just 3000)) resultProblems
-        task <- liftIO $ (atRandIndex probs)
-        let Problems {..} = task
 
-        replyText problemsName
+        let Model {..} = getResponseBody response
+        if modelStatus == (Text.pack "OK") then do
+          let Result {..} = modelResult
+          let probs = filter (filter' (mnd mn) (mnd mx)) resultProblems
+
+          if length probs == 0
+              then do
+                replyText "Нет задач с такими ограничениями"
+              else do
+                task <- liftIO $ (atRandIndex probs)
+                let Problems {..} = task
+                replyText problemsName
+          else do
+            replyText "Codeforces умер"
 
 
     startMessage = Text.unlines
@@ -210,6 +223,10 @@ codeforcesBot = BotApp
       , replyKeyboardMarkupSelective = Nothing
       , replyKeyboardMarkupInputFieldSelector = Nothing
       }
+
+
+mnd (Right number) = Just (fst number)
+mnd (Left _)       = Nothing
 
 run :: Token -> IO ()
 run token = do
