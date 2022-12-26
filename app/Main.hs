@@ -203,7 +203,7 @@ codeforcesBot = BotApp
               else do
                 task <- liftIO $ (atRandIndex probs)
                 let Problems {..} = task
-                replyText problemsName
+                replyText (Text.concat [(Text.pack "https://codeforces.com/problemset/problem/"), (Text.pack $ show problemsContestId), (Text.pack "/"), (problemsIndex)] )
           else do
             replyText "Codeforces умер"
 
